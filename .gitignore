@@ -1,0 +1,3 @@
+.env
+.xlsx-import-*.csv
+__pycache__/
