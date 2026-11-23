@@ -27,10 +27,12 @@ if (!$item) {
 }
 $history = $pdo->prepare(
     "SELECT m.folio, m.id, m.type, m.reference, m.note, m.created_at, u.username,
+        r.id AS remesa_id, r.number AS remesa_number,
         fl.building_code AS from_building, fl.code AS from_code,
         tl.building_code AS to_building, tl.code AS to_code, ml.from_status, ml.to_status
      FROM movement_lines ml JOIN movements m ON m.id = ml.movement_id
      JOIN app_users u ON u.id = m.created_by
+     LEFT JOIN remesa r ON r.movement_id = m.id
      LEFT JOIN warehouse_locations fl ON fl.id = ml.from_location_id
      LEFT JOIN warehouse_locations tl ON tl.id = ml.to_location_id
      WHERE ml.item_id = :item_id
@@ -60,6 +62,6 @@ pageHeader('Ficha del artículo', 'inventario');
 </section>
 <section class="panel"><div class="panel-heading"><div><h2>Historial de movimientos</h2><p>Trazabilidad de este artículo</p></div><a class="button secondary" href="movements.php?item_code=<?= urlencode($item['item_code']) ?>">Registrar movimiento</a></div>
     <?php $entries = $history->fetchAll(); if ($entries === []): ?><div class="empty-state compact"><strong>Sin movimientos registrados</strong><p>El inventario importado es una fotografía inicial, no un movimiento.</p></div><?php else: ?>
-    <div class="table-wrap"><table><thead><tr><th>Folio</th><th>Tipo</th><th>Desde</th><th>Hacia</th><th>Referencia / nota</th><th>Usuario · fecha</th></tr></thead><tbody><?php foreach ($entries as $entry): ?><tr><td class="mono"><?= h($entry['folio'] ?: ('MOV-' . $entry['id'])) ?></td><td><?= h(movementLabel($entry['type'])) ?></td><td><?= h($entry['from_code'] ? $entry['from_building'] . ' · ' . $entry['from_code'] : '—') ?></td><td><?= h($entry['to_code'] ? $entry['to_building'] . ' · ' . $entry['to_code'] : '—') ?></td><td><?= h(trim($entry['reference'] . ' ' . $entry['note']) ?: '—') ?></td><td><?= h($entry['username']) ?><br><small><?= h(date('d/m/Y H:i', strtotime($entry['created_at']))) ?></small></td></tr><?php endforeach; ?></tbody></table></div><?php endif; ?>
+    <div class="table-wrap"><table><thead><tr><th>Folio</th><th>Tipo</th><th>Remesa</th><th>Desde</th><th>Hacia</th><th>Referencia / nota</th><th>Usuario · fecha</th></tr></thead><tbody><?php foreach ($entries as $entry): ?><tr><td class="mono"><?= h($entry['folio'] ?: ('MOV-' . $entry['id'])) ?></td><td><?= h(movementLabel($entry['type'])) ?></td><td><?php if ($entry['remesa_id'] !== null): ?><a class="table-link mono" href="remesas.php?<?= h(http_build_query(['id' => (int) $entry['remesa_id']])) ?>"><?= h($entry['remesa_number']) ?></a><?php else: ?>—<?php endif; ?></td><td><?= h($entry['from_code'] ? $entry['from_building'] . ' · ' . $entry['from_code'] : '—') ?></td><td><?= h($entry['to_code'] ? $entry['to_building'] . ' · ' . $entry['to_code'] : '—') ?></td><td><?= h(trim($entry['reference'] . ' ' . $entry['note']) ?: '—') ?></td><td><?= h($entry['username']) ?><br><small><?= h(date('d/m/Y H:i', strtotime($entry['created_at']))) ?></small></td></tr><?php endforeach; ?></tbody></table></div><?php endif; ?>
 </section>
 <?php pageFooter(); ?>

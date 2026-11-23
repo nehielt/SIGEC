@@ -297,6 +297,28 @@ $locationCountStatement = $pdo->prepare(
 $locationCountParams = isAdmin() ? [] : ['building_user_id' => $_SESSION['user_id']];
 $locationCountStatement->execute($locationCountParams);
 $locationCount = (int) $locationCountStatement->fetchColumn();
+$remesaAgingStatement = $pdo->prepare(
+    "SELECT
+        COUNT(*) FILTER (
+            WHERE dispatch_m.created_at <= NOW()
+              AND dispatch_m.created_at >= NOW() - INTERVAL '15 days'
+        ) AS up_to_15_days,
+        COUNT(*) FILTER (
+            WHERE dispatch_m.created_at < NOW() - INTERVAL '15 days'
+              AND dispatch_m.created_at >= NOW() - INTERVAL '30 days'
+        ) AS days_16_to_30,
+        COUNT(*) FILTER (WHERE dispatch_m.created_at < NOW() - INTERVAL '90 days') AS over_90_days
+     FROM remesa_pending_items rp
+     JOIN remesa r ON r.id = rp.remesa_id
+     JOIN movements dispatch_m ON dispatch_m.id = r.movement_id
+     JOIN inventory_items i ON i.id = rp.item_id
+     LEFT JOIN warehouse_locations l ON l.id = i.location_id
+     WHERE rp.resolved_at IS NULL
+       AND i.deleted_at IS NULL
+       AND " . inventoryAccessSql('i', 'l', 'remesa_kpi'),
+);
+$remesaAgingStatement->execute(inventoryAccessParams('remesa_kpi'));
+$remesaAging = $remesaAgingStatement->fetch();
 $movementScope = inventoryAccessSql('i', 'l', 'recent');
 $movementPrivacy = isAdmin() ? '' : '
      AND NOT EXISTS (
@@ -371,12 +393,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'ask_i
 
 pageHeader('Resumen', 'inicio');
 ?>
-<section class="welcome-banner"><div><p class="eyebrow">VISIBILIDAD EN TIEMPO REAL</p><h2>La operación, bajo control.</h2><p>Existencias, ubicaciones y movimientos con trazabilidad por artículo.</p></div><a class="button light" href="movements.php">+ Registrar movimiento</a></section>
 <section class="stats-grid">
-    <article class="stat-card"><span class="stat-label">Artículos registrados</span><strong><?= number_format((int) $stats['total']) ?></strong><span class="stat-note">IDs de inventario únicos</span></article>
-    <article class="stat-card"><span class="stat-label">En almacén</span><strong><?= number_format((int) $stats['stored']) ?></strong><span class="stat-note"><span class="mini-dot green"></span>Existencia disponible en ubicación</span></article>
-    <article class="stat-card"><span class="stat-label">En salida</span><strong><?= number_format((int) $stats['out']) ?></strong><span class="stat-note"><span class="mini-dot amber"></span>Fuera temporalmente</span></article>
-    <article class="stat-card"><span class="stat-label">Ubicaciones activas</span><strong><?= number_format($locationCount) ?></strong><span class="stat-note">Sin capacidad ficticia; configúrala</span></article>
+    <article class="stat-card stat-card--blue"><span class="stat-label">Artículos registrados</span><strong><?= number_format((int) $stats['total']) ?></strong><span class="stat-note">IDs de inventario únicos</span></article>
+    <article class="stat-card stat-card--green"><span class="stat-label">En almacén</span><strong><?= number_format((int) $stats['stored']) ?></strong><span class="stat-note"><span class="mini-dot green"></span>Existencia disponible en ubicación</span></article>
+    <article class="stat-card stat-card--amber"><span class="stat-label">En salida</span><strong><?= number_format((int) $stats['out']) ?></strong><span class="stat-note"><span class="mini-dot amber"></span>Fuera temporalmente</span></article>
+    <article class="stat-card stat-card--purple"><span class="stat-label">Ubicaciones activas</span><strong><?= number_format($locationCount) ?></strong><span class="stat-note">Sin capacidad ficticia; configúrala</span></article>
+    <article class="stat-card stat-card--teal"><span class="stat-label">Pendientes de devolución · hasta 15 días</span><strong><?= number_format((int) $remesaAging['up_to_15_days']) ?></strong><span class="stat-note">Artículos no devueltos en remesas</span></article>
+    <article class="stat-card stat-card--orange"><span class="stat-label">Pendientes de devolución · 16–30 días</span><strong><?= number_format((int) $remesaAging['days_16_to_30']) ?></strong><span class="stat-note">Artículos no devueltos en remesas</span></article>
+    <article class="stat-card stat-card--red"><span class="stat-label">Pendientes de devolución · más de 90 días</span><strong><?= number_format((int) $remesaAging['over_90_days']) ?></strong><span class="stat-note">Artículos no devueltos en remesas</span></article>
 </section>
 <section class="panel">
     <div class="panel-heading">
