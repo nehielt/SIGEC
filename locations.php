@@ -43,6 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $search = trim((string) ($_GET['q'] ?? ''));
 $buildingCode = trim((string) ($_GET['building_code'] ?? ''));
 $occupancy = trim((string) ($_GET['occupancy'] ?? ''));
+$page = max(1, (int) ($_GET['page'] ?? 1));
+$pageSize = 25;
 if (!in_array($occupancy, ['occupied', 'available', 'full'], true)) {
     $occupancy = '';
 }
@@ -75,15 +77,35 @@ if ($occupancy === 'occupied') {
 } elseif ($occupancy === 'full') {
     $having = " HAVING l.capacity IS NOT NULL AND {$occupiedExpression} >= l.capacity";
 }
+$countStatement = $pdo->prepare(
+    "SELECT COUNT(*) FROM (
+        SELECT l.id
+        FROM warehouse_locations l
+        LEFT JOIN inventory_items i ON i.location_id = l.id AND i.deleted_at IS NULL AND {$locationScope}
+        WHERE " . implode(' AND ', $where) . "
+        GROUP BY l.id{$having}
+     ) matching_locations",
+);
+$countStatement->execute($locationParams);
+$total = (int) $countStatement->fetchColumn();
+$pages = max(1, (int) ceil($total / $pageSize));
+$page = min($page, $pages);
 $statement = $pdo->prepare(
     "SELECT l.id, l.building_code, l.code, l.name, l.capacity,
         {$occupiedExpression} AS occupied,
         COUNT(i.id) FILTER (WHERE i.status = 'out') AS out_count
      FROM warehouse_locations l LEFT JOIN inventory_items i ON i.location_id = l.id AND i.deleted_at IS NULL AND {$locationScope}
      WHERE " . implode(' AND ', $where) . "
-     GROUP BY l.id{$having} ORDER BY l.building_code, l.code",
+     GROUP BY l.id{$having} ORDER BY l.building_code, l.code
+     LIMIT :limit OFFSET :offset",
 );
-$statement->execute($locationParams);
+$listParams = $locationParams;
+foreach ($listParams as $key => $value) {
+    $statement->bindValue(':' . $key, $value);
+}
+$statement->bindValue(':limit', $pageSize, PDO::PARAM_INT);
+$statement->bindValue(':offset', ($page - 1) * $pageSize, PDO::PARAM_INT);
+$statement->execute();
 $locations = $statement->fetchAll();
 
 $buildingScope = buildingAccessSql('l', 'locations_filter');
@@ -99,7 +121,7 @@ $buildings = $buildingStatement->fetchAll();
 
 pageHeader('Ubicaciones', 'ubicaciones');
 ?>
-<section class="panel"><div class="panel-heading"><div><h2>Capacidad y ocupación</h2><p>La capacidad no se infiere del archivo: establece el límite físico real de cada ubicación.</p></div><span class="count-pill"><?= number_format(count($locations)) ?> ubicaciones</span></div>
+<section class="panel"><div class="panel-heading"><div><h2>Capacidad y ocupación</h2><p>La capacidad no se infiere del archivo: establece el límite físico real de cada ubicación.</p></div><span class="count-pill"><?= number_format($total) ?> ubicaciones</span></div>
 <form class="filter-form" method="get">
     <label class="search-field">Buscar<input type="search" name="q" value="<?= h($search) ?>" placeholder="Edificio, ubicación o descripción"></label>
     <label>Edificio<select name="building_code"><option value="">Todos</option><?php foreach ($buildings as $building): ?><option value="<?= h($building['code']) ?>" <?= $buildingCode === $building['code'] ? 'selected' : '' ?>><?= h($building['code']) ?><?= $building['description'] !== '' ? ' · ' . h($building['description']) : '' ?></option><?php endforeach; ?></select></label>
@@ -111,5 +133,6 @@ pageHeader('Ubicaciones', 'ubicaciones');
 <div class="table-wrap"><table><thead><tr><th>Edificio</th><th>Ubicación</th><th>Descripción</th><th>En almacén</th><th>En salida</th><th>Capacidad (unidades)</th></tr></thead><tbody><?php foreach ($locations as $location): ?><tr>
 <td class="mono"><?= h($location['building_code']) ?></td><td class="mono"><?= h($location['code']) ?></td><td><?= h($location['name'] ?: '—') ?></td><td><?= number_format((int) $location['occupied']) ?></td><td><?= number_format((int) $location['out_count']) ?></td>
 <td><form class="inline-form" method="post"><input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>"><input type="hidden" name="id" value="<?= (int) $location['id'] ?>"><input class="capacity-input" type="number" min="1" name="capacity" value="<?= h($location['capacity'] ?? '') ?>" placeholder="Sin límite" aria-label="Capacidad de <?= h($location['code']) ?>"><button class="button small secondary" type="submit">Guardar</button></form></td></tr><?php endforeach; ?></tbody></table></div>
+<?php if ($pages > 1): ?><div class="pagination"><?php if ($page > 1): ?><a href="?<?= h(http_build_query(['q' => $search, 'building_code' => $buildingCode, 'occupancy' => $occupancy, 'page' => $page - 1])) ?>">← Anterior</a><?php endif; ?><span><?= $page ?> / <?= $pages ?></span><?php if ($page < $pages): ?><a href="?<?= h(http_build_query(['q' => $search, 'building_code' => $buildingCode, 'occupancy' => $occupancy, 'page' => $page + 1])) ?>">Siguiente →</a><?php endif; ?></div><?php endif; ?>
 <?php endif; ?></section>
 <?php pageFooter(); ?>
