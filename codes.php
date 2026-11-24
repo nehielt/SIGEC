@@ -5,7 +5,7 @@ requireAuth($pdo);
 
 if (!isAdmin()) {
     http_response_code(403);
-    exit('No tienes permiso para administrar códigos.');
+    exit('No tienes permiso para administrar prefijos y series.');
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -17,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $clientId = filter_var($_POST['client_id'] ?? null, FILTER_VALIDATE_INT);
             $prefix = strtoupper(trim((string) ($_POST['prefix'] ?? '')));
             if ($clientId === false || $clientId < 1 || preg_match('/^[A-Z0-9]{1,3}$/', $prefix) !== 1) {
-                throw new InvalidArgumentException('Selecciona un cliente e ingresa un prefijo de 1 a 3 letras o números.');
+                throw new InvalidArgumentException('Selecciona un cliente e ingresa un prefijo de 1 a 3 letras mayúsculas o números.');
             }
             $clientExists = $pdo->prepare('SELECT EXISTS (SELECT 1 FROM clients WHERE id = :id)');
             $clientExists->execute(['id' => $clientId]);
@@ -28,14 +28,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $insert->execute(['client_id' => $clientId, 'prefix' => $prefix]);
             flash('success', 'Prefijo registrado.');
         } elseif ($action === 'create_series') {
+            $clientId = filter_var($_POST['client_id'] ?? null, FILTER_VALIDATE_INT);
             $prefixId = filter_var($_POST['prefix_id'] ?? null, FILTER_VALIDATE_INT);
             $departmentIdInput = trim((string) ($_POST['department_id'] ?? ''));
             $departmentId = $departmentIdInput === ''
                 ? null
                 : filter_var($departmentIdInput, FILTER_VALIDATE_INT);
             $quantity = filter_var($_POST['quantity'] ?? null, FILTER_VALIDATE_INT);
-            if ($prefixId === false || $prefixId < 1 || ($departmentId !== null && ($departmentId === false || $departmentId < 1))) {
-                throw new InvalidArgumentException('Selecciona un prefijo y, si aplica, un departamento válido.');
+            if ($clientId === false || $clientId < 1 || $prefixId === false || $prefixId < 1 || ($departmentId !== null && ($departmentId === false || $departmentId < 1))) {
+                throw new InvalidArgumentException('Selecciona un cliente, un prefijo y, si aplica, un departamento válido.');
             }
             if ($quantity === false || $quantity < 1 || $quantity > 500) {
                 throw new InvalidArgumentException('La serie debe incluir entre 1 y 500 artículos.');
@@ -49,6 +50,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $prefix = $prefixStatement->fetch();
             if (!$prefix) {
                 throw new InvalidArgumentException('El prefijo seleccionado ya no está disponible.');
+            }
+            if ((int) $prefix['client_id'] !== $clientId) {
+                throw new InvalidArgumentException('El prefijo seleccionado no pertenece al cliente.');
             }
             if ($departmentId !== null) {
                 $departmentStatement = $pdo->prepare(
@@ -145,7 +149,7 @@ $prefixes = $pdo->query(
      ORDER BY c.name, p.prefix",
 )->fetchAll();
 
-pageHeader('Codigos', 'codigos');
+pageHeader('Prefijos y series', 'codigos');
 ?>
 <div class="content-grid permission-layout">
     <section class="panel">
@@ -154,7 +158,7 @@ pageHeader('Codigos', 'codigos');
             <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
             <input type="hidden" name="action" value="create_prefix">
             <label>Cliente<select name="client_id" required><option value="">Selecciona un cliente</option><?php foreach ($clients as $client): ?><option value="<?= (int) $client['id'] ?>"><?= h($client['name'] . ($client['code'] !== '' ? ' · ' . $client['code'] : '')) ?></option><?php endforeach; ?></select></label>
-            <label>Prefijo<input name="prefix" pattern="[A-Za-z0-9]{1,3}" minlength="1" maxlength="3" required placeholder="1 a 3 letras o números"></label>
+            <label>Prefijo<input name="prefix" id="prefix-input" pattern="[A-Z0-9]{1,3}" minlength="1" maxlength="3" required placeholder="1 a 3 letras mayúsculas o números"></label>
             <button class="button primary" type="submit">Guardar prefijo</button>
         </form>
     </section>
@@ -163,6 +167,7 @@ pageHeader('Codigos', 'codigos');
         <form method="post" class="form-stack" id="series-form">
             <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
             <input type="hidden" name="action" value="create_series">
+            <label>Cliente<select name="client_id" id="series-client-select" required><option value="">Selecciona un cliente</option><?php foreach ($clients as $client): ?><option value="<?= (int) $client['id'] ?>"><?= h($client['name'] . ($client['code'] !== '' ? ' · ' . $client['code'] : '')) ?></option><?php endforeach; ?></select></label>
             <label>Prefijo del cliente<select name="prefix_id" id="prefix-select" required><option value="">Selecciona un prefijo</option><?php foreach ($prefixes as $prefix): ?><option value="<?= (int) $prefix['id'] ?>" data-client-id="<?= (int) $prefix['client_id'] ?>" data-prefix="<?= h($prefix['prefix']) ?>"><?= h($prefix['client_name'] . ' · ' . $prefix['prefix']) ?></option><?php endforeach; ?></select></label>
             <label>Departamento <span class="conditional-hint">opcional</span><select name="department_id" id="department-select"><option value="">Sin departamento</option><?php foreach ($departments as $department): ?><option value="<?= (int) $department['id'] ?>" data-client-id="<?= (int) $department['client_id'] ?>"><?= h($department['name'] . ' · ' . $department['department_code']) ?></option><?php endforeach; ?></select></label>
             <label>Cantidad de cajas<input type="number" name="quantity" min="1" max="500" required value="1"></label>
@@ -172,20 +177,47 @@ pageHeader('Codigos', 'codigos');
     </section>
 </div>
 <section class="panel">
-    <div class="panel-heading"><div><h2>Prefijos registrados</h2><p><?= number_format(count($prefixes)) ?> prefijos configurados</p></div></div>
+    <div class="panel-heading"><div><h2>Prefijos registrados</h2><p id="registered-prefix-count">Selecciona un cliente para ver sus prefijos</p></div></div>
     <?php if ($prefixes === []): ?>
         <div class="empty-state compact"><strong>Sin prefijos registrados</strong><p>Registra un prefijo para habilitar la creación de series.</p></div>
     <?php else: ?>
-        <div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Prefijo</th><th>Serie</th><th>Último código</th><th>Artículos activos</th></tr></thead><tbody>
-            <?php foreach ($prefixes as $prefix): ?><tr><td><?= h($prefix['client_name'] . ($prefix['client_code'] !== '' ? ' · ' . $prefix['client_code'] : '')) ?></td><td class="mono"><?= h($prefix['prefix']) ?></td><td><?= 7 - strlen($prefix['prefix']) ?> dígitos</td><td class="mono"><?= h($prefix['last_code'] ?? '—') ?></td><td><?= number_format((int) $prefix['item_count']) ?></td></tr><?php endforeach; ?>
+        <div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Prefijo</th><th>Serie</th><th>Último código</th><th>Artículos activos</th></tr></thead><tbody id="registered-prefix-rows">
+            <?php foreach ($prefixes as $prefix): ?><tr data-client-id="<?= (int) $prefix['client_id'] ?>" hidden><td><?= h($prefix['client_name'] . ($prefix['client_code'] !== '' ? ' · ' . $prefix['client_code'] : '')) ?></td><td class="mono"><?= h($prefix['prefix']) ?></td><td><?= 7 - strlen($prefix['prefix']) ?> dígitos</td><td class="mono"><?= h($prefix['last_code'] ?? '—') ?></td><td><?= number_format((int) $prefix['item_count']) ?></td></tr><?php endforeach; ?>
         </tbody></table></div>
     <?php endif; ?>
 </section>
 <script>
+    const prefixInput = document.getElementById('prefix-input');
+    const seriesClientSelect = document.getElementById('series-client-select');
     const prefixSelect = document.getElementById('prefix-select');
     const departmentSelect = document.getElementById('department-select');
+    const prefixOptions = Array.from(prefixSelect.options).slice(1);
     const departmentOptions = Array.from(departmentSelect.options).slice(1);
     const seriesPreview = document.getElementById('series-preview');
+    const registeredPrefixRows = Array.from(document.querySelectorAll('#registered-prefix-rows tr'));
+    const registeredPrefixCount = document.getElementById('registered-prefix-count');
+
+    prefixInput.addEventListener('input', () => {
+        prefixInput.value = prefixInput.value.toUpperCase();
+    });
+
+    function updateSeriesClientFields() {
+        const clientId = seriesClientSelect.value;
+        const matchingPrefixes = prefixOptions.filter(option => option.dataset.clientId === clientId);
+        prefixSelect.replaceChildren(prefixSelect.options[0], ...matchingPrefixes);
+        let visiblePrefixCount = 0;
+        registeredPrefixRows.forEach(row => {
+            const visible = clientId !== '' && row.dataset.clientId === clientId;
+            row.hidden = !visible;
+            if (visible) {
+                visiblePrefixCount++;
+            }
+        });
+        registeredPrefixCount.textContent = clientId === ''
+            ? 'Selecciona un cliente para ver sus prefijos'
+            : `${visiblePrefixCount} prefijo${visiblePrefixCount === 1 ? '' : 's'} configurado${visiblePrefixCount === 1 ? '' : 's'} para el cliente`;
+        updateSeriesFields();
+    }
 
     function updateSeriesFields() {
         const selectedPrefix = prefixSelect.selectedOptions[0];
@@ -200,6 +232,8 @@ pageHeader('Codigos', 'codigos');
         }
     }
 
+    seriesClientSelect.addEventListener('change', updateSeriesClientFields);
     prefixSelect.addEventListener('change', updateSeriesFields);
+    updateSeriesClientFields();
 </script>
 <?php pageFooter(); ?>

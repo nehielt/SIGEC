@@ -291,12 +291,6 @@ $statsStatement = $pdo->prepare(
 );
 $statsStatement->execute(inventoryAccessParams());
 $stats = $statsStatement->fetch();
-$locationCountStatement = $pdo->prepare(
-    'SELECT COUNT(*) FROM warehouse_locations l WHERE l.is_active AND ' . buildingAccessSql(),
-);
-$locationCountParams = isAdmin() ? [] : ['building_user_id' => $_SESSION['user_id']];
-$locationCountStatement->execute($locationCountParams);
-$locationCount = (int) $locationCountStatement->fetchColumn();
 $remesaAgingStatement = $pdo->prepare(
     "SELECT
         COUNT(*) FILTER (
@@ -393,11 +387,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'ask_i
 
 pageHeader('Resumen', 'inicio');
 ?>
-<section class="stats-grid">
+<section class="stats-grid summary-stats-grid">
     <article class="stat-card stat-card--blue"><span class="stat-label">Artículos registrados</span><strong><?= number_format((int) $stats['total']) ?></strong><span class="stat-note">IDs de inventario únicos</span></article>
     <article class="stat-card stat-card--green"><span class="stat-label">En almacén</span><strong><?= number_format((int) $stats['stored']) ?></strong><span class="stat-note"><span class="mini-dot green"></span>Existencia disponible en ubicación</span></article>
     <article class="stat-card stat-card--amber"><span class="stat-label">En salida</span><strong><?= number_format((int) $stats['out']) ?></strong><span class="stat-note"><span class="mini-dot amber"></span>Fuera temporalmente</span></article>
-    <article class="stat-card stat-card--purple"><span class="stat-label">Ubicaciones activas</span><strong><?= number_format($locationCount) ?></strong><span class="stat-note">Sin capacidad ficticia; configúrala</span></article>
+</section>
+<section class="stats-grid remesa-stats-grid">
     <article class="stat-card stat-card--teal"><span class="stat-label">Pendientes de devolución · hasta 15 días</span><strong><?= number_format((int) $remesaAging['up_to_15_days']) ?></strong><span class="stat-note">Artículos no devueltos en remesas</span></article>
     <article class="stat-card stat-card--orange"><span class="stat-label">Pendientes de devolución · 16–30 días</span><strong><?= number_format((int) $remesaAging['days_16_to_30']) ?></strong><span class="stat-note">Artículos no devueltos en remesas</span></article>
     <article class="stat-card stat-card--red"><span class="stat-label">Pendientes de devolución · más de 90 días</span><strong><?= number_format((int) $remesaAging['over_90_days']) ?></strong><span class="stat-note">Artículos no devueltos en remesas</span></article>

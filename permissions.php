@@ -16,18 +16,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($action === 'create') {
             $username = trim((string) ($_POST['username'] ?? ''));
+            $fullName = strtoupper(trim((string) ($_POST['full_name'] ?? '')));
             $password = (string) ($_POST['password'] ?? '');
-            if ($username === '' || strlen($username) > 80 || strlen($password) < 12) {
-                throw new InvalidArgumentException('Indica un usuario y una contraseña de al menos 12 caracteres.');
+            if ($username === '' || strlen($username) > 80 || strlen($fullName) > 250 || strlen($password) < 12) {
+                throw new InvalidArgumentException('Indica un usuario válido, un nombre completo de hasta 250 caracteres y una contraseña de al menos 12 caracteres.');
             }
 
             $statement = $pdo->prepare(
-                'INSERT INTO app_users (username, password_hash) VALUES (:username, :hash) RETURNING id',
+                'INSERT INTO app_users (username, full_name, password_hash) VALUES (:username, :full_name, :hash) RETURNING id',
             );
-            $statement->execute(['username' => $username, 'hash' => password_hash($password, PASSWORD_DEFAULT)]);
+            $statement->execute([
+                'username' => $username,
+                'full_name' => $fullName,
+                'hash' => password_hash($password, PASSWORD_DEFAULT),
+            ]);
             $targetId = (int) $statement->fetchColumn();
             flash('success', 'Usuario creado. Asigna sus permisos para habilitar el acceso a la información.');
         } elseif ($action === 'save' && $targetId > 0) {
+            $fullNameValue = $_POST['full_name'] ?? '';
+            if (!is_string($fullNameValue)) {
+                throw new InvalidArgumentException('El nombre completo no es válido.');
+            }
+            $fullName = strtoupper(trim($fullNameValue));
+            if (strlen($fullName) > 250) {
+                throw new InvalidArgumentException('El nombre completo no puede superar los 250 caracteres.');
+            }
+
             $isTargetAdmin = isset($_POST['is_admin']);
             $buildingValues = $_POST['buildings'] ?? [];
             if (!is_array($buildingValues)) {
@@ -49,7 +63,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            $updateUser = $pdo->prepare('UPDATE app_users SET is_admin = :is_admin WHERE id = :id');
+            $updateUser = $pdo->prepare('UPDATE app_users SET full_name = :full_name, is_admin = :is_admin WHERE id = :id');
+            $updateUser->bindValue(':full_name', $fullName, PDO::PARAM_STR);
             $updateUser->bindValue(':is_admin', $isTargetAdmin, PDO::PARAM_BOOL);
             $updateUser->bindValue(':id', $targetId, PDO::PARAM_INT);
             $updateUser->execute();
@@ -96,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-$users = $pdo->query('SELECT id, username, is_admin FROM app_users ORDER BY username')->fetchAll();
+$users = $pdo->query('SELECT id, username, full_name, is_admin FROM app_users ORDER BY username')->fetchAll();
 $buildings = $pdo->query('SELECT code AS building_code FROM building ORDER BY code')->fetchAll();
 $selectedId = (int) ($_GET['user_id'] ?? ($users[0]['id'] ?? 0));
 $selectedUser = null;
@@ -121,7 +136,7 @@ pageHeader('Usuarios y permisos', 'permisos');
         <div class="user-permission-list">
             <?php foreach ($users as $user): ?>
                 <a class="user-permission-link <?= (int) $user['id'] === $selectedId ? 'active' : '' ?>" href="permissions.php?user_id=<?= (int) $user['id'] ?>">
-                    <strong><?= h($user['username']) ?></strong><span><?= databaseBoolean($user['is_admin']) ? 'Administrador' : 'Usuario' ?></span>
+                    <strong><?= h($user['full_name'] !== '' ? $user['full_name'] : $user['username']) ?></strong><span><?= h($user['username']) ?> · <?= databaseBoolean($user['is_admin']) ? 'Administrador' : 'Usuario' ?></span>
                 </a>
             <?php endforeach; ?>
         </div>
@@ -131,6 +146,7 @@ pageHeader('Usuarios y permisos', 'permisos');
         <form method="post" class="form-stack">
             <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
             <input type="hidden" name="action" value="create">
+            <label>Nombre completo<input name="full_name" class="user-full-name" maxlength="250" autocomplete="name"></label>
             <label>Usuario<input name="username" maxlength="80" required autocomplete="off"></label>
             <label>Contraseña<input type="password" name="password" minlength="12" required autocomplete="new-password"></label>
             <button class="button primary" type="submit">Crear usuario</button>
@@ -146,6 +162,7 @@ pageHeader('Usuarios y permisos', 'permisos');
                 <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
                 <input type="hidden" name="action" value="save">
                 <input type="hidden" name="user_id" value="<?= $selectedId ?>">
+                <label>Nombre completo<input name="full_name" class="user-full-name" maxlength="250" autocomplete="name" value="<?= h($selectedUser['full_name']) ?>"></label>
                 <label class="checkbox-label"><input type="checkbox" name="is_admin" value="1" <?= databaseBoolean($selectedUser['is_admin']) ? 'checked' : '' ?>> Administrador · acceso completo y gestión de permisos</label>
 
                 <fieldset class="permission-fieldset">
@@ -165,4 +182,11 @@ pageHeader('Usuarios y permisos', 'permisos');
         <?php endif; ?>
     </section>
 </div>
+<script>
+    document.querySelectorAll('.user-full-name').forEach(input => {
+        input.addEventListener('input', () => {
+            input.value = input.value.toUpperCase();
+        });
+    });
+</script>
 <?php pageFooter(); ?>

@@ -20,8 +20,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $selectedContactId = (int) ($_POST['contact_id'] ?? 0);
 
         if ($action === 'create' || $action === 'update') {
-            $name = trim((string) ($_POST['name'] ?? ''));
-            $code = trim((string) ($_POST['code'] ?? ''));
+            $name = strtoupper(trim((string) ($_POST['name'] ?? '')));
+            $code = strtoupper(trim((string) ($_POST['code'] ?? '')));
             if ($action === 'update' && $selectedId > 0) {
                 $codeStatement = $pdo->prepare('SELECT code FROM clients WHERE id = :id');
                 $codeStatement->execute(['id' => $selectedId]);
@@ -67,8 +67,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $clientCodeStatement = $pdo->prepare('SELECT code FROM clients WHERE id = :id');
             $clientCodeStatement->execute(['id' => $selectedId]);
             $clientCode = $clientCodeStatement->fetchColumn();
-            $departmentCode = trim((string) ($_POST['department_code'] ?? ''));
-            $departmentName = trim((string) ($_POST['department_name'] ?? ''));
+            $departmentCode = strtoupper(trim((string) ($_POST['department_code'] ?? '')));
+            $departmentName = strtoupper(trim((string) ($_POST['department_name'] ?? '')));
             if ($departmentCode === '' || strlen($departmentCode) > 120 || $departmentName === '' || strlen($departmentName) > 250) {
                 throw new InvalidArgumentException('El código del departamento es obligatorio (máximo 120 caracteres) y el nombre es obligatorio (máximo 250).');
             }
@@ -147,8 +147,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $selectedContactId = 0;
                 flash('success', 'Persona de contacto eliminada.');
             } else {
-                $name = trim((string) ($_POST['contact_name'] ?? ''));
-                $jobTitle = trim((string) ($_POST['job_title'] ?? ''));
+                $name = strtoupper(trim((string) ($_POST['contact_name'] ?? '')));
+                $jobTitle = strtoupper(trim((string) ($_POST['job_title'] ?? '')));
                 if ($name === '' || strlen($name) > 250 || $jobTitle === '' || strlen($jobTitle) > 150) {
                     throw new InvalidArgumentException('El nombre es obligatorio (máximo 250 caracteres) y el cargo es obligatorio (máximo 150).');
                 }
@@ -213,7 +213,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-$search = trim((string) ($_GET['q'] ?? ''));
+$search = strtoupper(trim((string) ($_GET['q'] ?? '')));
 $params = [];
 $filter = '';
 if ($search !== '') {
@@ -293,7 +293,7 @@ pageHeader('Clientes', 'clientes');
     <section class="panel">
         <div class="panel-heading"><div><h2>Clientes registrados</h2><p><?= number_format(count($clients)) ?> clientes en el catálogo</p></div></div>
         <form class="filter-form compact-filter" method="get">
-            <label class="search-field">Buscar cliente<input type="search" name="q" value="<?= h($search) ?>" placeholder="Código del cliente"></label>
+            <label class="search-field">Buscar cliente<input type="search" name="q" id="client-search" value="<?= h($search) ?>" placeholder="Código del cliente"></label>
             <button class="button secondary" type="submit">Buscar</button>
         </form>
         <?php if ($clients === []): ?>
@@ -316,8 +316,8 @@ pageHeader('Clientes', 'clientes');
             <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
             <input type="hidden" name="action" value="<?= $selectedClient ? 'update' : 'create' ?>">
             <?php if ($selectedClient): ?><input type="hidden" name="client_id" value="<?= (int) $selectedClient['id'] ?>"><?php endif; ?>
-            <label>Nombre del cliente<input name="name" maxlength="250" required value="<?= h($selectedClient['name'] ?? '') ?>"></label>
-            <label>Código de cuenta <span class="conditional-hint"><?= $selectedClient ? 'no editable' : 'opcional' ?></span><input name="code" maxlength="120" value="<?= h($selectedClient['code'] ?? '') ?>" <?= $selectedClient ? 'readonly' : '' ?>></label>
+            <label>Nombre del cliente<input name="name" id="client-name" maxlength="250" required value="<?= h($selectedClient['name'] ?? '') ?>"></label>
+            <label>Código de cuenta <span class="conditional-hint"><?= $selectedClient ? 'no editable' : 'opcional' ?></span><input name="code" id="client-code" maxlength="120" value="<?= h($selectedClient['code'] ?? '') ?>" <?= $selectedClient ? 'readonly' : '' ?>></label>
             <button class="button primary" type="submit"><?= $selectedClient ? 'Guardar cambios' : 'Crear cliente' ?></button>
             <?php if ($selectedClient): ?><a class="table-link" href="clients.php">Cancelar edición</a><?php endif; ?>
         </form>
@@ -355,8 +355,8 @@ pageHeader('Clientes', 'clientes');
                 <input type="hidden" name="action" value="<?= $selectedDepartment ? 'update_department' : 'create_department' ?>">
                 <input type="hidden" name="client_id" value="<?= (int) $selectedId ?>">
                 <?php if ($selectedDepartment): ?><input type="hidden" name="department_id" value="<?= (int) $selectedDepartment['id'] ?>"><?php endif; ?>
-                <label>Código del departamento<input name="department_code" maxlength="120" required value="<?= h($selectedDepartment['department_code'] ?? '') ?>"></label>
-                <label>Nombre del departamento<input name="department_name" maxlength="250" required value="<?= h($selectedDepartment['name'] ?? '') ?>"></label>
+                <label>Código del departamento<input name="department_code" id="department-code" maxlength="120" required value="<?= h($selectedDepartment['department_code'] ?? '') ?>"></label>
+                <label>Nombre del departamento<input name="department_name" id="department-name" maxlength="250" required value="<?= h($selectedDepartment['name'] ?? '') ?>"></label>
                 <button class="button primary" type="submit"><?= $selectedDepartment ? 'Guardar departamento' : 'Agregar departamento' ?></button>
                 <?php if ($selectedDepartment): ?><a class="table-link" href="clients.php?client_id=<?= (int) $selectedId ?>">Cancelar edición</a><?php endif; ?>
             </form>
@@ -397,12 +397,21 @@ pageHeader('Clientes', 'clientes');
                 <input type="hidden" name="action" value="<?= $selectedContact ? 'update_contact' : 'create_contact' ?>">
                 <input type="hidden" name="client_id" value="<?= (int) $selectedId ?>">
                 <?php if ($selectedContact): ?><input type="hidden" name="contact_id" value="<?= (int) $selectedContact['id'] ?>"><?php endif; ?>
-                <label>Nombre<input name="contact_name" maxlength="250" required value="<?= h($selectedContact['name'] ?? '') ?>"></label>
-                <label>Cargo<input name="job_title" maxlength="150" required value="<?= h($selectedContact['job_title'] ?? '') ?>"></label>
+                <label>Nombre<input name="contact_name" id="contact-name" maxlength="250" required value="<?= h($selectedContact['name'] ?? '') ?>"></label>
+                <label>Cargo<input name="job_title" id="job-title" maxlength="150" required value="<?= h($selectedContact['job_title'] ?? '') ?>"></label>
                 <button class="button primary" type="submit"><?= $selectedContact ? 'Guardar persona de contacto' : 'Agregar persona de contacto' ?></button>
                 <?php if ($selectedContact): ?><a class="table-link" href="clients.php?client_id=<?= (int) $selectedId ?>">Cancelar edición</a><?php endif; ?>
             </form>
         <?php endif; ?>
     </section>
 </div>
+<script>
+    document.querySelectorAll(
+        '#client-search, #client-name, #client-code, #department-code, #department-name, #contact-name, #job-title'
+    ).forEach(input => {
+        input.addEventListener('input', () => {
+            input.value = input.value.toUpperCase();
+        });
+    });
+</script>
 <?php pageFooter(); ?>

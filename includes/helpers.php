@@ -26,14 +26,15 @@ function verifyCsrf(): void
 function requireAuth(PDO $pdo): void
 {
     if (isset($_SESSION['user_id'], $_SESSION['username'])) {
-        $statement = $pdo->prepare('SELECT is_admin FROM app_users WHERE id = :id');
+        $statement = $pdo->prepare('SELECT is_admin, full_name FROM app_users WHERE id = :id');
         $statement->execute(['id' => $_SESSION['user_id']]);
-        $isAdmin = $statement->fetchColumn();
-        if ($isAdmin !== false) {
-            $_SESSION['is_admin'] = databaseBoolean($isAdmin);
+        $user = $statement->fetch();
+        if ($user) {
+            $_SESSION['is_admin'] = databaseBoolean($user['is_admin']);
+            $_SESSION['full_name'] = $user['full_name'];
             return;
         }
-        unset($_SESSION['user_id'], $_SESSION['username'], $_SESSION['is_admin']);
+        unset($_SESSION['user_id'], $_SESSION['username'], $_SESSION['full_name'], $_SESSION['is_admin']);
     }
 
     $hasUsers = (int) $pdo->query('SELECT COUNT(*) FROM app_users')->fetchColumn() > 0;
@@ -223,10 +224,30 @@ function pageHeader(string $title, string $active = '', string $eyebrow = 'CONTR
         ],
     ];
     if (isAdmin()) {
-        $links['Reportes'] = ['reports.php', 'reportes'];
-        $links['Configuración']['children']['Códigos'] = ['codes.php', 'codigos'];
-        $links['Configuración']['children']['Clientes'] = ['clients.php', 'clientes'];
-        $links['Configuración']['children']['Edificios'] = ['buildings.php', 'edificios'];
+        $links['Reportes'] = [
+            'type' => 'group',
+            'active_keys' => ['reportes', 'reportes-remesas'],
+            'children' => [
+                'Artículos' => ['reports.php', 'reportes'],
+                'Remesas' => ['remesas_report.php', 'reportes-remesas'],
+            ],
+        ];
+        $links['Configuración']['children'] = [
+            'Clientes' => [
+                'clients.php',
+                'clientes',
+                'children' => [
+                    'Prefijos y series' => ['codes.php', 'codigos'],
+                ],
+            ],
+            'Edificios' => [
+                'buildings.php',
+                'edificios',
+                'children' => [
+                    'Ubicaciones' => ['locations.php', 'ubicaciones'],
+                ],
+            ],
+        ];
         $links['Configuración']['children']['Usuarios y permisos'] = ['permissions.php', 'permisos'];
         $links['Configuración']['active_keys'] = ['ubicaciones', 'codigos', 'clientes', 'edificios', 'permisos'];
     }
@@ -247,14 +268,18 @@ function pageHeader(string $title, string $active = '', string $eyebrow = 'CONTR
             <nav aria-label="Navegación principal">
                 <?php foreach ($links as $label => $link): ?>
                     <?php if (($link['type'] ?? '') === 'group'): ?>
-                        <div class="nav-group <?= in_array($active, $link['active_keys'], true) ? 'active' : '' ?>">
-                            <div class="nav-group-label"><span class="nav-dot"></span><?= h($label) ?></div>
+                        <details class="nav-group <?= in_array($active, $link['active_keys'], true) ? 'active' : '' ?>" <?= in_array($active, $link['active_keys'], true) ? 'open' : '' ?>>
+                            <summary class="nav-group-label"><span class="nav-dot"></span><?= h($label) ?></summary>
                             <div class="nav-submenu">
-                                <?php foreach ($link['children'] as $childLabel => [$childHref, $childKey]): ?>
+                                <?php foreach ($link['children'] as $childLabel => $child): ?>
+                                    <?php [$childHref, $childKey] = $child; ?>
                                     <a class="nav-link nav-sublink <?= $active === $childKey ? 'active' : '' ?>" href="<?= h($childHref) ?>"><?= h($childLabel) ?></a>
+                                    <?php foreach ($child['children'] ?? [] as $nestedLabel => [$nestedHref, $nestedKey]): ?>
+                                        <a class="nav-link nav-sublink nav-sublink-nested <?= $active === $nestedKey ? 'active' : '' ?>" href="<?= h($nestedHref) ?>"><?= h($nestedLabel) ?></a>
+                                    <?php endforeach; ?>
                                 <?php endforeach; ?>
                             </div>
-                        </div>
+                        </details>
                     <?php else: ?>
                         <?php [$href, $key] = $link; ?>
                         <a class="nav-link <?= $active === $key ? 'active' : '' ?>" href="<?= h($href) ?>"><span class="nav-dot"></span><?= h($label) ?></a>
@@ -271,7 +296,7 @@ function pageHeader(string $title, string $active = '', string $eyebrow = 'CONTR
             </div>
         </aside>
         <main class="main-content">
-            <header class="topbar"><div class="topbar-brand"><strong>SIG</strong><span>Sistema Integrado de Gestión</span></div><span class="topbar-date"><?= h(date('d/m/Y')) ?></span></header>
+            <header class="topbar"><div class="topbar-brand"><strong>SIG</strong><span>Sistema Integrado de Gestión</span></div><div class="topbar-meta"><span class="topbar-user"><?= h(($_SESSION['full_name'] ?? '') !== '' ? $_SESSION['full_name'] : ($_SESSION['username'] ?? '')) ?></span><span class="topbar-date"><?= h(date('d/m/Y')) ?></span></div></header>
             <div class="page-content">
                 <div class="page-title-row"><div><p class="eyebrow"><?= h($eyebrow) ?></p><h1><?= h($title) ?></h1></div></div>
                 <?php if ($message = flash('success')): ?><div class="alert success"><?= h($message) ?></div><?php endif; ?>

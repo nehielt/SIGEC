@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $buildingCode = strtoupper(trim((string) ($_POST['building_code'] ?? '')));
             $selectedCode = $buildingCode;
             $locationCode = strtoupper(trim((string) ($_POST['location_code'] ?? '')));
-            $locationName = trim((string) ($_POST['location_name'] ?? ''));
+            $locationName = strtoupper(trim((string) ($_POST['location_name'] ?? '')));
             $capacityInput = trim((string) ($_POST['capacity'] ?? ''));
             $capacity = $capacityInput === '' ? null : filter_var($capacityInput, FILTER_VALIDATE_INT);
             if (
@@ -51,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $originalCode = trim((string) ($_POST['original_code'] ?? ''));
             $code = strtoupper(trim((string) ($_POST['code'] ?? '')));
-            $description = trim((string) ($_POST['description'] ?? ''));
+            $description = strtoupper(trim((string) ($_POST['description'] ?? '')));
             if ($code === '' || strlen($code) > 40 || strlen($description) > 1000) {
                 throw new InvalidArgumentException('El código es obligatorio (máximo 40 caracteres) y la descripción admite hasta 1000.');
             }
@@ -132,8 +132,8 @@ pageHeader('Edificios', 'edificios');
             <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
             <input type="hidden" name="action" value="<?= $selectedBuilding ? 'update' : 'create' ?>">
             <?php if ($selectedBuilding): ?><input type="hidden" name="original_code" value="<?= h($selectedBuilding['code']) ?>"><?php endif; ?>
-            <label>Código del edificio<input name="code" maxlength="40" required value="<?= h($selectedBuilding['code'] ?? '') ?>"></label>
-            <label>Descripción<textarea name="description" rows="4" maxlength="1000"><?= h($selectedBuilding['description'] ?? '') ?></textarea></label>
+            <label>Código del edificio<input name="code" id="building-code" maxlength="40" required value="<?= h($selectedBuilding['code'] ?? '') ?>"></label>
+            <label>Descripción<textarea name="description" id="building-description" rows="4" maxlength="1000"><?= h($selectedBuilding['description'] ?? '') ?></textarea></label>
             <button class="button primary" type="submit"><?= $selectedBuilding ? 'Guardar cambios' : 'Crear edificio' ?></button>
             <?php if ($selectedBuilding): ?><a class="table-link" href="buildings.php">Cancelar edición</a><?php endif; ?>
         </form>
@@ -144,12 +144,19 @@ pageHeader('Edificios', 'edificios');
                 <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
                 <input type="hidden" name="action" value="create_location">
                 <input type="hidden" name="building_code" value="<?= h($selectedBuilding['code']) ?>">
-                <label>Código de ubicación<input name="location_code" maxlength="100" required></label>
-                <label>Descripción<input name="location_name" maxlength="200"></label>
+                <label>Código de ubicación<input name="location_code" id="location-code" maxlength="100" required></label>
+                <label>Descripción<input name="location_name" id="location-name" maxlength="200"></label>
                 <label>Capacidad <span class="conditional-hint">opcional</span><input type="number" name="capacity" min="1" step="1" placeholder="Sin límite configurado"></label>
                 <button class="button primary" type="submit">Agregar ubicación</button>
             </form>
         <?php endif; ?>
     </section>
 </div>
+<script>
+    document.querySelectorAll('#building-code, #building-description, #location-code, #location-name').forEach(input => {
+        input.addEventListener('input', () => {
+            input.value = input.value.toUpperCase();
+        });
+    });
+</script>
 <?php pageFooter(); ?>
